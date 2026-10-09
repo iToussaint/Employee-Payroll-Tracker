@@ -1,0 +1,24 @@
+[project]
+name = "payroll-tracker"
+version = "0.1.0"
+description = "Employee Payroll Tracker - computes payslips for full-time, contract and intern employees"
+authors = [
+    {name = "iToussaint",email = "toussaint.iradukunda@amalitech.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "payroll_tracker", from = "src" }]
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.1,<10.0.0)"
+]
