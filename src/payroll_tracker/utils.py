@@ -1,10 +1,10 @@
-"""Payroll rules and rates.
+"""Shared payroll rules and helper functions.
 
-All amounts are per monthly pay period. Change the values here to adjust
+All amounts are per monthly pay period. Change the rule values here to adjust
 how every payslip is calculated.
 """
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
 
 # Roles
@@ -31,3 +31,24 @@ TAX_BANDS: list[tuple[Decimal | None, Decimal]] = [
     (Decimal("3000"), Decimal("0.20")),
     (None, Decimal("0.30")),
 ]
+
+CENT = Decimal("0.01")
+
+
+def to_money(amount: Decimal) -> Decimal:
+    """Round an amount to cents."""
+    return amount.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def require_non_negative(value: Decimal, field: str) -> None:
+    """Raise ValueError if a numeric field is negative."""
+    if value < 0:
+        raise ValueError(f"{field} cannot be negative (got {value})")
+
+
+def format_row(cells: list[str], widths: list[int]) -> str:
+    """Join cells into one table row; positive widths left-align, negative right-align."""
+    parts = []
+    for cell, width in zip(cells, widths):
+        parts.append(f"{cell:<{width}}" if width > 0 else f"{cell:>{-width}}")
+    return "".join(parts)

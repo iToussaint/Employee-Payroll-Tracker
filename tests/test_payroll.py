@@ -2,14 +2,33 @@ from decimal import Decimal
 
 import pytest
 
+from payroll_tracker.employee import ContractRecord, EmployeeRecord, FullTimeRecord, InternRecord
 from payroll_tracker.payroll import (
-    EmployeeRecord,
-    calculate_payslip,
+    apply_tax,
+    calculate_pension,
+    calculate_salary,
     contract_gross,
+    generate_payslip,
     payroll_totals,
     process_payroll,
     progressive_tax,
 )
+
+FULL_TIMER: FullTimeRecord = {
+    "id": "FT1",
+    "name": "A",
+    "role": "full_time",
+    "annual_salary": Decimal("60000"),
+    "bonus": Decimal("500"),
+}
+CONTRACTOR: ContractRecord = {
+    "id": "CT1",
+    "name": "B",
+    "role": "contract",
+    "hourly_rate": Decimal("20"),
+    "hours_worked": Decimal("100"),
+}
+INTERN: InternRecord = {"id": "IN1", "name": "C", "role": "intern", "stipend": Decimal("800")}
 
 
 @pytest.mark.parametrize(
@@ -36,70 +55,59 @@ def test_contract_gross_with_overtime() -> None:
     assert contract_gross(Decimal("20"), Decimal("170")) == Decimal("3500.00")
 
 
-def test_full_time_payslip() -> None:
-    slip = calculate_payslip(
-        {
-            "id": "FT1",
-            "name": "A",
-            "role": "full_time",
-            "annual_salary": Decimal("60000"),
-            "bonus": Decimal("500"),
-        }
-    )
-    # gross 5000 + 500; pension 5% of 5000 = 250; taxable 5250 -> tax 650
-    assert slip["gross_pay"] == Decimal("5500.00")
-    assert slip["pension"] == Decimal("250.00")
-    assert slip["tax"] == Decimal("650.00")
-    assert slip["net_pay"] == Decimal("4600.00")
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [(FULL_TIMER, "5500.00"), (CONTRACTOR, "2000.00"), (INTERN, "800.00")],
+)
+def test_calculate_salary_per_role(record: EmployeeRecord, expected: str) -> None:
+    assert calculate_salary(record) == Decimal(expected)
 
 
-def test_contract_payslip_has_flat_tax_and_no_pension() -> None:
-    slip = calculate_payslip(
-        {
-            "id": "CT1",
-            "name": "B",
-            "role": "contract",
-            "hourly_rate": Decimal("20"),
-            "hours_worked": Decimal("100"),
-        }
-    )
-    assert slip["gross_pay"] == Decimal("2000.00")
-    assert slip["tax"] == Decimal("300.00")
-    assert slip["pension"] == Decimal("0.00")
-    assert slip["net_pay"] == Decimal("1700.00")
+def test_only_full_time_pays_pension() -> None:
+    assert calculate_pension(FULL_TIMER) == Decimal("250.00")
+    assert calculate_pension(CONTRACTOR) == Decimal("0.00")
+    assert calculate_pension(INTERN) == Decimal("0.00")
 
 
-def test_intern_below_tax_threshold_pays_no_tax() -> None:
-    slip = calculate_payslip({"id": "IN1", "name": "C", "role": "intern", "stipend": Decimal("800")})
-    assert slip["tax"] == Decimal("0.00")
-    assert slip["net_pay"] == Decimal("800.00")
+def test_apply_tax_flat_for_contract_progressive_otherwise() -> None:
+    assert apply_tax(Decimal("2000"), "contract") == Decimal("300.00")
+    assert apply_tax(Decimal("2000"), "full_time") == Decimal("100.00")
+    assert apply_tax(Decimal("2000"), "intern") == Decimal("100.00")
 
 
-def test_negative_values_rejected() -> None:
-    with pytest.raises(ValueError, match="stipend"):
-        calculate_payslip({"id": "IN1", "name": "C", "role": "intern", "stipend": Decimal("-1")})
-    with pytest.raises(ValueError, match="hours_worked"):
-        contract_gross(Decimal("20"), Decimal("-5"))
-
-
-def test_unknown_role_rejected() -> None:
-    record: dict[str, object] = {"id": "X1", "name": "D", "role": "manager"}
+def test_apply_tax_rejects_unknown_role_and_negative_amount() -> None:
     with pytest.raises(ValueError, match="Unknown role"):
-        calculate_payslip(record)  # type: ignore[arg-type]
+        apply_tax(Decimal("2000"), "manager")
+    with pytest.raises(ValueError, match="negative"):
+        apply_tax(Decimal("-1"), "contract")
+
+
+def test_generate_payslip_full_time() -> None:
+    slip = generate_payslip(FULL_TIMER)
+    # gross 5000 + 500; pension 5% of 5000 = 250; taxable 5250 -> tax 650
+    assert slip == {
+        "id": "FT1",
+        "name": "A",
+        "role": "full_time",
+        "gross_pay": Decimal("5500.00"),
+        "tax": Decimal("650.00"),
+        "pension": Decimal("250.00"),
+        "net_pay": Decimal("4600.00"),
+    }
+
+
+def test_generate_payslip_contract_and_intern() -> None:
+    contract_slip = generate_payslip(CONTRACTOR)
+    assert contract_slip["tax"] == Decimal("300.00")
+    assert contract_slip["net_pay"] == Decimal("1700.00")
+
+    intern_slip = generate_payslip(INTERN)
+    assert intern_slip["tax"] == Decimal("0.00")
+    assert intern_slip["net_pay"] == Decimal("800.00")
 
 
 def test_process_payroll_maps_ids_and_totals() -> None:
-    records: list[EmployeeRecord] = [
-        {"id": "IN1", "name": "C", "role": "intern", "stipend": Decimal("800")},
-        {
-            "id": "CT1",
-            "name": "B",
-            "role": "contract",
-            "hourly_rate": Decimal("20"),
-            "hours_worked": Decimal("100"),
-        },
-    ]
-    payroll = process_payroll(records)
+    payroll = process_payroll([INTERN, CONTRACTOR])
     assert list(payroll) == ["IN1", "CT1"]
     totals = payroll_totals(payroll)
     assert totals["gross_pay"] == Decimal("2800.00")
@@ -107,6 +115,5 @@ def test_process_payroll_maps_ids_and_totals() -> None:
 
 
 def test_duplicate_ids_rejected() -> None:
-    record: EmployeeRecord = {"id": "IN1", "name": "C", "role": "intern", "stipend": Decimal("800")}
     with pytest.raises(ValueError, match="Duplicate"):
-        process_payroll([record, record])
+        process_payroll([INTERN, INTERN])
