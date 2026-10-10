@@ -4,8 +4,12 @@ All amounts are per monthly pay period. Change the rule values here to adjust
 how every payslip is calculated.
 """
 
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Final
+
+# Accepted input types for money and hours. Floats are excluded on purpose:
+# they cannot represent most decimal amounts exactly.
+Amount = Decimal | int | str
 
 # Roles
 FULL_TIME: Final = "full_time"
@@ -44,6 +48,35 @@ def require_non_negative(value: Decimal, field: str) -> None:
     """Raise ValueError if a numeric field is negative."""
     if value < 0:
         raise ValueError(f"{field} cannot be negative (got {value})")
+
+
+def to_amount(value: Amount, field: str) -> Decimal:
+    """Convert an int, numeric string or Decimal to a finite, non-negative Decimal."""
+    if isinstance(value, bool) or not isinstance(value, (Decimal, int, str)):
+        raise TypeError(f"{field} must be a Decimal, int or numeric string (got {value!r})")
+    try:
+        amount = Decimal(value)
+    except InvalidOperation:
+        raise ValueError(f"{field} is not a valid number (got {value!r})") from None
+    if not amount.is_finite():
+        raise ValueError(f"{field} must be a finite number (got {value!r})")
+    require_non_negative(amount, field)
+    return amount
+
+
+def progressive_tax(taxable: Decimal) -> Decimal:
+    """Apply TAX_BANDS to a monthly amount, band by band."""
+    require_non_negative(taxable, "taxable amount")
+    tax = Decimal("0")
+    remaining = taxable
+    index = 0
+    while remaining > 0 and index < len(TAX_BANDS):
+        width, rate = TAX_BANDS[index]
+        portion = remaining if width is None else min(remaining, width)
+        tax += portion * rate
+        remaining -= portion
+        index += 1
+    return to_money(tax)
 
 
 def format_row(cells: list[str], widths: list[int]) -> str:

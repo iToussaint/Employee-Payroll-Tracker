@@ -2,31 +2,14 @@
 
 from decimal import Decimal
 
-from payroll_tracker.employee import EmployeeRecord
+from payroll_tracker.employee import ContractEmployee, Employee, FullTimeEmployee, Intern
 from payroll_tracker.payroll import payroll_totals, process_payroll
 from payroll_tracker.utils import format_row
 
-SAMPLE_EMPLOYEES: list[EmployeeRecord] = [
-    {
-        "id": "FT001",
-        "name": "Ama Mensah",
-        "role": "full_time",
-        "annual_salary": Decimal("60000"),
-        "bonus": Decimal("500"),
-    },
-    {
-        "id": "CT001",
-        "name": "Kwame Boateng",
-        "role": "contract",
-        "hourly_rate": Decimal("25"),
-        "hours_worked": Decimal("172"),
-    },
-    {
-        "id": "IN001",
-        "name": "Esi Owusu",
-        "role": "intern",
-        "stipend": Decimal("1200"),
-    },
+SAMPLE_EMPLOYEES: list[Employee] = [
+    FullTimeEmployee("FT001", "Ama Mensah", annual_salary=Decimal("60000"), bonus=Decimal("500")),
+    ContractEmployee("CT001", "Kwame Boateng", hourly_rate=Decimal("25"), hours_worked=Decimal("172")),
+    Intern("IN001", "Esi Owusu", stipend=Decimal("1200")),
 ]
 
 # Positive widths left-align, negative widths right-align.
