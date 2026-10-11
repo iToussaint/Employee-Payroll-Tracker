@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 
 from payroll_tracker.utils import (
+    format_money,
     format_row,
     progressive_tax,
     require_non_negative,
@@ -46,3 +47,8 @@ def test_to_amount_converts_int_and_str() -> None:
     assert to_amount("2.50", "x") == Decimal("2.50")
     with pytest.raises(TypeError):
         to_amount(True, "x")
+
+
+def test_format_money_adds_separators_and_cents() -> None:
+    assert format_money(Decimal("60000")) == "60,000.00"
+    assert format_money(Decimal("1234.565")) == "1,234.57"

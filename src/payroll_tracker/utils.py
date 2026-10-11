@@ -51,6 +51,11 @@ def to_money(amount: Decimal) -> Decimal:
     return amount.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
+def format_money(amount: Decimal) -> str:
+    """Round to cents and add thousands separators, e.g. 60000 -> '60,000.00'."""
+    return f"{to_money(amount):,}"
+
+
 def require_non_negative(value: Decimal, field: str) -> None:
     """Raise ValueError if a numeric field is negative."""
     if value < 0:

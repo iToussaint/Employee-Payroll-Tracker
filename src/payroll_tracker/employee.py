@@ -29,6 +29,7 @@ class Employee(ABC):
     """Base class for every employee role."""
 
     ROLE: ClassVar[str]
+    ROLE_TITLE: ClassVar[str]
 
     def __init__(self, employee_id: str, name: str) -> None:
         if not isinstance(employee_id, str) or not employee_id.strip():
@@ -104,6 +105,15 @@ class Employee(ABC):
         """Tax on a taxable amount. Progressive bands unless a role overrides this."""
         return utils.progressive_tax(taxable)
 
+    @property
+    def tax_basis(self) -> str:
+        """Short description of how tax is calculated, for reports."""
+        return "progressive bands"
+
+    @abstractmethod
+    def pay_details(self) -> list[tuple[str, str]]:
+        """Role-specific (label, value) lines explaining how gross pay was reached."""
+
     def __repr__(self) -> str:
         return f"{type(self).__name__}(employee_id={self.employee_id!r}, name={self.name!r})"
 
@@ -132,6 +142,7 @@ class FullTimeEmployee(Employee):
     """Salaried employee: annual salary paid monthly, plus bonus, with pension."""
 
     ROLE = utils.FULL_TIME
+    ROLE_TITLE = "Full-time Employee"
 
     def __init__(
         self,
@@ -174,11 +185,19 @@ class FullTimeEmployee(Employee):
     def calculate_pension(self) -> Decimal:
         return utils.to_money(self.base_monthly_salary * utils.PENSION_RATE)
 
+    def pay_details(self) -> list[tuple[str, str]]:
+        return [
+            ("Annual salary", utils.format_money(self.__annual_salary)),
+            ("Monthly base salary", utils.format_money(self.base_monthly_salary)),
+            ("Bonus", utils.format_money(self.__bonus)),
+        ]
+
 
 class ContractEmployee(Employee):
     """Hourly contractor: overtime above standard hours, flat tax withholding."""
 
     ROLE = utils.CONTRACT
+    ROLE_TITLE = "Contract Employee"
 
     def __init__(
         self,
@@ -225,11 +244,27 @@ class ContractEmployee(Employee):
         utils.require_non_negative(taxable, "taxable amount")
         return utils.to_money(taxable * utils.CONTRACT_WITHHOLDING_RATE)
 
+    @property
+    def tax_basis(self) -> str:
+        return f"flat {utils.CONTRACT_WITHHOLDING_RATE:.0%} withholding"
+
+    def pay_details(self) -> list[tuple[str, str]]:
+        regular_hours = self.__hours_worked - self.overtime_hours
+        overtime_rate = self.__hourly_rate * utils.OVERTIME_MULTIPLIER
+        return [
+            ("Hourly rate", utils.format_money(self.__hourly_rate)),
+            ("Regular hours", f"{regular_hours:,}"),
+            ("Regular pay", utils.format_money(self.__hourly_rate * regular_hours)),
+            (f"Overtime hours (x{utils.OVERTIME_MULTIPLIER})", f"{self.overtime_hours:,}"),
+            ("Overtime pay", utils.format_money(overtime_rate * self.overtime_hours)),
+        ]
+
 
 class Intern(Employee):
     """Intern on a fixed monthly stipend."""
 
     ROLE = utils.INTERN
+    ROLE_TITLE = "Intern"
 
     def __init__(self, employee_id: str, name: str, stipend: utils.Amount) -> None:
         super().__init__(employee_id, name)
@@ -247,3 +282,6 @@ class Intern(Employee):
 
     def calculate_salary(self) -> Decimal:
         return utils.to_money(self.__stipend)
+
+    def pay_details(self) -> list[tuple[str, str]]:
+        return [("Monthly stipend", utils.format_money(self.__stipend))]

@@ -8,6 +8,7 @@ employees produces a dictionary that maps each employee ID to its payslip.
 from decimal import Decimal
 from typing import TypedDict
 
+from payroll_tracker import utils
 from payroll_tracker.employee import Employee
 
 
@@ -71,3 +72,84 @@ def payroll_totals(payroll: dict[str, Payslip]) -> dict[str, Decimal]:
         totals["pension"] += payslip["pension"]
         totals["net_pay"] += payslip["net_pay"]
     return totals
+
+
+# Reports. These never check an employee's type: each employee supplies its own
+# role title, pay details and tax basis, so new roles appear without changes here.
+
+REPORT_WIDTH = 44
+
+
+def _report_line(label: str, value: str) -> str:
+    return f"{label:<{REPORT_WIDTH - 16}}{value:>16}"
+
+
+def generate_report(employee: Employee) -> str:
+    """Detailed payslip report whose pay section depends on the employee's role."""
+    lines = [
+        "=" * REPORT_WIDTH,
+        f"PAYSLIP - {employee.ROLE_TITLE}".center(REPORT_WIDTH),
+        "=" * REPORT_WIDTH,
+        _report_line("Employee ID", employee.employee_id),
+        _report_line("Name", employee.name),
+        "-" * REPORT_WIDTH,
+    ]
+    for label, value in employee.pay_details():
+        lines.append(_report_line(label, value))
+    lines += [
+        "-" * REPORT_WIDTH,
+        _report_line("Gross pay", utils.format_money(employee.salary)),
+        _report_line("Pension", utils.format_money(employee.pension)),
+        _report_line(f"Tax ({employee.tax_basis})", utils.format_money(employee.tax)),
+        "-" * REPORT_WIDTH,
+        _report_line("NET PAY", utils.format_money(employee.net_pay)),
+        "=" * REPORT_WIDTH,
+    ]
+    return "\n".join(lines)
+
+
+class RoleSummary(TypedDict):
+    headcount: int
+    gross_pay: Decimal
+    tax: Decimal
+    pension: Decimal
+    net_pay: Decimal
+
+
+def summarize_by_role(employees: list[Employee]) -> dict[str, RoleSummary]:
+    """Group employees by role title, in order of first appearance, with pay subtotals."""
+    summary: dict[str, RoleSummary] = {}
+    for employee in employees:
+        if employee.ROLE_TITLE not in summary:
+            summary[employee.ROLE_TITLE] = {
+                "headcount": 0,
+                "gross_pay": Decimal("0.00"),
+                "tax": Decimal("0.00"),
+                "pension": Decimal("0.00"),
+                "net_pay": Decimal("0.00"),
+            }
+        group = summary[employee.ROLE_TITLE]
+        group["headcount"] += 1
+        group["gross_pay"] += employee.salary
+        group["tax"] += employee.tax
+        group["pension"] += employee.pension
+        group["net_pay"] += employee.net_pay
+    return summary
+
+
+def role_summary_report(employees: list[Employee]) -> str:
+    """Table of headcount and pay subtotals for each role present."""
+    widths = [20, -6, -12, -11, -11, -12]
+    header = utils.format_row(["Role", "Count", "Gross", "Tax", "Pension", "Net"], widths)
+    lines = ["PAYROLL SUMMARY BY ROLE", header, "-" * len(header)]
+    for role_title, group in summarize_by_role(employees).items():
+        cells = [
+            role_title,
+            str(group["headcount"]),
+            utils.format_money(group["gross_pay"]),
+            utils.format_money(group["tax"]),
+            utils.format_money(group["pension"]),
+            utils.format_money(group["net_pay"]),
+        ]
+        lines.append(utils.format_row(cells, widths))
+    return "\n".join(lines)
