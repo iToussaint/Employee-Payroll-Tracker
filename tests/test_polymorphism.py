@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from decimal import Decimal
 
 from payroll_tracker.employee import (
@@ -6,13 +5,13 @@ from payroll_tracker.employee import (
     Employee,
     FullTimeEmployee,
     Intern,
+    PayDetail,
 )
-from payroll_tracker.payroll import (
+from payroll_tracker.payroll import process_payroll, summarize_by_role
+from payroll_tracker.reports import (
     generate_report,
     payroll_table_report,
-    process_payroll,
     role_summary_report,
-    summarize_by_role,
 )
 
 EMPLOYEES: list[Employee] = [
@@ -32,12 +31,11 @@ class Consultant(Employee):
     def calculate_salary(self) -> Decimal:
         return Decimal("3000.00")
 
-    def pay_details(self) -> list[tuple[str, str]]:
-        return [("Day rate x days", "300.00 x 10")]
-
-    @classmethod
-    def from_dict(cls, data: Mapping[str, object]) -> "Consultant":
-        return cls(str(data["id"]), str(data["name"]))
+    def pay_details(self) -> list[PayDetail]:
+        return [
+            PayDetail("Day rate", Decimal("300")),
+            PayDetail("Days worked", Decimal("10"), "hours"),
+        ]
 
 
 def test_same_method_gives_role_specific_results() -> None:
@@ -114,7 +112,7 @@ def test_new_role_works_without_changing_report_code() -> None:
     consultant = Consultant("CO1", "Kofi")
     report = generate_report(consultant)
     assert "PAYSLIP - Consultant" in report
-    assert "Day rate x days" in report
+    assert "Day rate" in report and "300.00" in report
     assert "Tax (progressive bands)" in report  # inherited default
     everyone = [consultant, *EMPLOYEES]
     assert "Consultant" in role_summary_report(everyone)

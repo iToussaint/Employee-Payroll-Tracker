@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
@@ -9,14 +10,15 @@ from payroll_tracker.employee import (
     Intern,
 )
 from payroll_tracker.payroll import (
+    Payable,
     apply_tax,
     calculate_salary,
     generate_payslip,
-    payroll_table_report,
     payroll_totals,
     process_payroll,
     sum_payslips,
 )
+from payroll_tracker.reports import payroll_table_report
 
 FULL_TIMER = FullTimeEmployee("FT1", "A", annual_salary=60000, bonus=500)
 CONTRACTOR = ContractEmployee("CT1", "B", hourly_rate=20, hours_worked=100)
@@ -95,6 +97,32 @@ def test_sum_payslips_of_nothing_is_zero() -> None:
 def test_duplicate_ids_rejected() -> None:
     with pytest.raises(ValueError, match="Duplicate"):
         process_payroll([INTERN, Intern("IN1", "Other", stipend=1)])
+
+
+@dataclass
+class Volunteer:
+    """Not an Employee subclass: payroll only needs the Payable members."""
+
+    employee_id: str = "V1"
+    name: str = "Kofi"
+    role: str = "volunteer"
+    role_title: str = "Volunteer"
+    pension: Decimal = Decimal("0.00")
+    taxable_income: Decimal = Decimal("0.00")
+    net_pay: Decimal = Decimal("0.00")
+
+    def calculate_salary(self) -> Decimal:
+        return Decimal("0.00")
+
+    def calculate_tax(self, taxable: Decimal) -> Decimal:
+        return Decimal("0.00")
+
+
+def test_payroll_depends_on_interface_not_employee_class() -> None:
+    staff: list[Payable] = [Volunteer(), INTERN]
+    payroll = process_payroll(staff)
+    assert payroll["V1"]["role_title"] == "Volunteer"
+    assert payroll_totals(payroll)["gross_pay"] == Decimal("800.00")
 
 
 def test_payroll_table_report() -> None:

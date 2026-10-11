@@ -1,16 +1,18 @@
 from collections.abc import Callable
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
 
 from payroll_tracker.employee import (
-    EMPLOYEE_TYPES,
     ContractEmployee,
     Employee,
     FullTimeEmployee,
     Intern,
-    create_employee,
+    PayDetail,
+    PayHistory,
 )
+from payroll_tracker.tax import FlatTax
 
 
 def make_full_timer() -> FullTimeEmployee:
@@ -78,10 +80,30 @@ def test_contract_salary_with_overtime() -> None:
     assert employee.calculate_salary() == Decimal("3500.00")
 
 
-def test_contract_overrides_tax_with_flat_rate() -> None:
+def test_contract_uses_flat_tax_policy_by_default() -> None:
     amount = Decimal("2000")
     assert make_contractor().calculate_tax(amount) == Decimal("300.00")
+    assert make_contractor().tax_basis == "flat 15% withholding"
     assert make_intern().calculate_tax(amount) == Decimal("100.00")  # bands
+    assert make_intern().tax_basis == "progressive bands"
+
+
+def test_tax_policy_can_be_injected() -> None:
+    intern = Intern("IN1", "Esi", stipend=800, tax_policy=FlatTax(
+        Decimal("0.10")
+    ))
+    assert intern.tax == Decimal("80.00")
+    assert intern.tax_basis == "flat 10% withholding"
+
+
+def test_pay_details_are_raw_values_with_units() -> None:
+    assert make_contractor("170").pay_details() == [
+        PayDetail("Hourly rate", Decimal("20")),
+        PayDetail("Regular hours", Decimal("160"), "hours"),
+        PayDetail("Regular pay", Decimal("3200")),
+        PayDetail("Overtime hours (x1.5)", Decimal("10"), "hours"),
+        PayDetail("Overtime pay", Decimal("300.0")),
+    ]
 
 
 def test_only_full_time_overrides_pension() -> None:
@@ -257,56 +279,12 @@ def test_pay_history_cannot_be_modified_from_outside() -> None:
     assert len(employee.pay_history) == 1
 
 
-# Building employees from dictionaries
+# Pay history
 
 
-def test_registry_maps_every_role_to_its_class() -> None:
-    assert EMPLOYEE_TYPES == {
-        "full_time": FullTimeEmployee,
-        "contract": ContractEmployee,
-        "intern": Intern,
-    }
-
-
-def test_create_employee_builds_each_role() -> None:
-    full_timer = create_employee(
-        {"id": "FT1", "name": "Ama", "role": "full_time",
-         "annual_salary": 60000}
-    )
-    contractor = create_employee(
-        {"id": "CT1", "name": "Kwame", "role": "contract",
-         "hourly_rate": "20", "hours_worked": Decimal("100.5")}
-    )
-    intern = create_employee(
-        {"id": "IN1", "name": "Esi", "role": "intern", "stipend": 800}
-    )
-    assert isinstance(full_timer, FullTimeEmployee)
-    assert full_timer.bonus == 0  # optional field defaults to 0
-    assert isinstance(contractor, ContractEmployee)
-    assert contractor.hours_worked == Decimal("100.5")
-    assert isinstance(intern, Intern)
-
-
-@pytest.mark.parametrize(
-    ("data", "message"),
-    [
-        ({"id": "X", "name": "A", "role": "manager"}, "unknown role"),
-        ({"id": "X", "name": "A"}, "unknown role"),
-        ({"id": "X", "name": "A", "role": "intern"}, "missing field"),
-        (
-            {"id": "X", "name": "A", "role": "intern", "stipend": 1,
-             "bonus": 5},
-            "unknown field",
-        ),
-        ({"id": 7, "name": "A", "role": "intern", "stipend": 1}, "text"),
-        (
-            {"id": "X", "name": "A", "role": "intern", "stipend": 0},
-            "greater than 0",
-        ),
-    ],
-)
-def test_create_employee_rejects_bad_data(
-    data: dict[str, object], message: str
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        create_employee(data)
+def test_pay_history_uses_injected_clock() -> None:
+    moment = datetime(2026, 1, 31, tzinfo=timezone.utc)
+    history = PayHistory(clock=lambda: moment)
+    history.record("stipend", Decimal("1"), Decimal("2"))
+    history.record("stipend", Decimal("2"), Decimal("2"))  # no change
+    assert [c.changed_at for c in history.changes] == [moment]

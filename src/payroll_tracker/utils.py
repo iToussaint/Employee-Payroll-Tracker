@@ -1,46 +1,14 @@
-"""Shared payroll rules and helper functions.
+"""General-purpose helpers for money, input validation and text tables.
 
-All amounts are per monthly pay period. Change the rule values here to adjust
-how every payslip is calculated.
+Nothing here knows about employees or payroll rules, so these functions can
+be reused anywhere in the project.
 """
 
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import Final
 
 # Accepted input types for money and hours. Floats are excluded on purpose:
 # they cannot represent most decimal amounts exactly.
 Amount = Decimal | int | str
-
-# Roles
-FULL_TIME: Final = "full_time"
-CONTRACT: Final = "contract"
-INTERN: Final = "intern"
-
-MONTHS_PER_YEAR = Decimal("12")
-
-# Full-time: pension contribution taken from base monthly salary.
-PENSION_RATE = Decimal("0.05")
-
-# Contract: hours beyond the standard month earn the overtime multiplier.
-STANDARD_MONTHLY_HOURS = Decimal("160")
-OVERTIME_MULTIPLIER = Decimal("1.5")
-CONTRACT_WITHHOLDING_RATE = Decimal("0.15")
-
-# Progressive monthly income tax bands as (band width, rate).
-# A width of None means "everything above the previous bands".
-TAX_BANDS: list[tuple[Decimal | None, Decimal]] = [
-    (Decimal("1000"), Decimal("0.00")),
-    (Decimal("2000"), Decimal("0.10")),
-    (Decimal("3000"), Decimal("0.20")),
-    (None, Decimal("0.30")),
-]
-
-# Upper limits on pay inputs, to catch data-entry mistakes (an extra zero).
-MAX_ANNUAL_SALARY = Decimal("1000000")
-MAX_BONUS = Decimal("50000")
-MAX_HOURLY_RATE = Decimal("1000")
-MAX_MONTHLY_HOURS = Decimal("744")  # 31 days * 24 hours
-MAX_STIPEND = Decimal("5000")
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
@@ -104,22 +72,6 @@ def to_amount(
     if maximum is not None and amount > maximum:
         raise ValueError(f"{field} cannot exceed {maximum} (got {amount})")
     return amount
-
-
-def progressive_tax(taxable: Decimal) -> Decimal:
-    """Apply TAX_BANDS to a monthly amount, one band at a time."""
-    require_non_negative(taxable, "taxable amount")
-    tax = Decimal("0")
-    remaining = taxable
-    index = 0
-    while remaining > 0 and index < len(TAX_BANDS):
-        width, rate = TAX_BANDS[index]
-        # The last band has no width and takes whatever is left.
-        portion = remaining if width is None else min(remaining, width)
-        tax += portion * rate
-        remaining -= portion
-        index += 1
-    return to_money(tax)
 
 
 def format_row(cells: list[str], widths: list[int]) -> str:

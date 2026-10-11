@@ -1,14 +1,13 @@
+import io
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
-from payroll_tracker.main import (
-    build_report,
-    load_employees,
-    main,
-    sample_employees,
-)
+from payroll_tracker.loader import sample_employees
+from payroll_tracker.main import build_report, main, report_choices
+from payroll_tracker.reports import REPORTS, Reportable, register_report
 
 SAMPLE_FILE = Path(__file__).parent.parent / "data" / "employees.json"
 
@@ -83,36 +82,6 @@ def test_sample_data_file_matches_built_in_sample(
     assert from_file == built_in
 
 
-def test_load_employees_reads_decimals_exactly(tmp_path: Path) -> None:
-    path = tmp_path / "employees.json"
-    path.write_text(
-        '[{"id": "IN1", "name": "Esi", "role": "intern", "stipend": 0.1}]',
-        encoding="utf-8",
-    )
-    [intern] = load_employees(path)
-    assert str(intern.salary) == "0.10"
-
-
-@pytest.mark.parametrize(
-    ("content", "message"),
-    [
-        ({"id": "IN1"}, "must contain a JSON list"),
-        ([], "contains no employees"),
-        (["IN1"], "record 1: expected a JSON object"),
-        (
-            [{"id": "IN1", "name": "Esi", "role": "intern", "stipend": 1},
-             {"id": "IN2", "name": "Abena", "role": "intern"}],
-            "record 2: missing field",
-        ),
-    ],
-)
-def test_load_employees_rejects_bad_files(
-    tmp_path: Path, content: object, message: str
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        load_employees(write_json(tmp_path, content))
-
-
 def test_missing_file_is_a_clean_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -142,3 +111,35 @@ def test_build_report_joins_sections_with_blank_line() -> None:
     text = build_report(sample_employees(), "all", "IN001")
     assert "\n\nPAYROLL SUMMARY BY ROLE" in text
     assert "\n\nPAYROLL TABLE" in text
+
+
+def test_output_streams_can_be_injected() -> None:
+    out, err = io.StringIO(), io.StringIO()
+    assert main(["-r", "summary"], out=out, err=err) == 0
+    assert out.getvalue().startswith("PAYROLL SUMMARY BY ROLE")
+    assert err.getvalue() == ""
+
+    assert main(["-e", "NOPE"], out=out, err=err) == 1
+    assert "no employee with ID" in err.getvalue()
+
+
+def test_report_choices_come_from_registry() -> None:
+    assert report_choices() == ["all", "payslips", "summary", "table"]
+
+
+def test_new_report_is_added_by_registering_it() -> None:
+    @register_report("headcount")
+    def headcount_report(employees: Sequence[Reportable]) -> str:
+        return f"HEADCOUNT {len(employees)}"
+
+    try:
+        out = io.StringIO()
+        assert main(["-r", "headcount"], out=out) == 0
+        assert out.getvalue().strip() == "HEADCOUNT 5"
+    finally:
+        del REPORTS["headcount"]
+
+
+def test_unknown_report_rejected_by_build_report() -> None:
+    with pytest.raises(ValueError, match="unknown report"):
+        build_report(sample_employees(), "bogus")
