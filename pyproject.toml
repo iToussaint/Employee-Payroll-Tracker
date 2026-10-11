@@ -10,26 +10,28 @@ requires-python = ">=3.11"
 dependencies = [
 ]
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
-
 [tool.poetry]
-packages = [{ include = "payroll_tracker", from = "src" }]
+# The modules run directly (python main.py); nothing is built or installed.
+package-mode = false
 
 [dependency-groups]
 dev = [
     "pytest (>=9.1.1,<10.0.0)",
     "mypy (>=1.18,<1.19)",
-    "flake8 (>=7.4.1,<8.0.0)",
-    "flake8-docstrings (>=1.7.0,<2.0.0)",
-    "pep8-naming (>=0.15.1,<0.16.0)",
+    "pycodestyle (>=2.15.0,<3.0.0)",
 ]
+
+[tool.pytest.ini_options]
+# Lets tests import main, employee, payroll and utils from the project root.
+pythonpath = ["."]
+testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src", "tests"]
+files = ["main.py", "employee.py", "payroll.py", "utils.py", "tests"]
 strict = true
-warn_unreachable = true
 pretty = true
+
+[tool.ruff]
+# PEP 8 line length, so the editor's formatter stays within 79 characters.
+line-length = 79

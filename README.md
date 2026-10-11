@@ -2,27 +2,30 @@
 
 A command-line Python application that computes monthly payslips for three
 kinds of employee: **full-time employees**, **contract employees** and
-**interns**. Each role has its own pay, pension and tax rules, built with an
+**interns**. Each role has its own pay and tax rules, built with an
 object-oriented class hierarchy.
 
-## Features
+## Project structure
 
-- Role-specific salary calculation through method overriding
-  (`calculate_salary()` behaves differently for each employee type)
-- Progressive income tax bands, flat contractor withholding and pension
-- Overtime pay for contractors above 160 hours a month
-- Validated, encapsulated pay data: private attributes behind `@property`
-  setters, with range checks
-- Three reports: detailed payslips, a summary by role, and a payroll table
-- Money handled with `Decimal`, never `float`, so amounts are exact to the cent
-- Clear error messages and exit codes for bad input (no tracebacks)
-
-## Requirements
-
-- Python 3.11 or newer
-- [Poetry](https://python-poetry.org/) 2.x
+```
+Employee-Payroll-Tracker/
+├── main.py         Entry point: sample employees, formats and prints
+│                   the payslip and summary reports
+├── employee.py     Employee base class and the three role subclasses,
+│                   each overriding calculate_salary()
+├── payroll.py      generate_payslip(), process_payroll(),
+│                   summarize_by_role()
+├── utils.py        Pay rules, apply_tax(), money helpers, validation
+├── tests/          pytest tests, one file per module
+├── .vscode/        VS Code settings and debug configurations
+├── pyproject.toml  Project settings and dev dependencies (Poetry)
+├── poetry.lock     Pinned dependency versions
+└── poetry.toml     Poetry settings (virtual environment in .venv/)
+```
 
 ## Setup
+
+Requirements: Python 3.11 or newer and [Poetry](https://python-poetry.org/).
 
 ```bash
 git clone <repository-url>
@@ -30,54 +33,82 @@ cd Employee-Payroll-Tracker
 poetry install
 ```
 
-`poetry install` creates a virtual environment in `.venv/` (configured in
-`poetry.toml`) and installs the project with its development tools (pytest,
-mypy, flake8 with docstring and naming checks). In VS Code, the interpreter in `.venv/` is selected
-automatically and `.vscode/launch.json` provides debug configurations for the
-app and the tests.
+`poetry install` creates a virtual environment in `.venv/` and installs the
+development tools (pytest, mypy, pycodestyle). The application itself uses
+only the Python standard library.
 
 ## Usage
 
 ```bash
-poetry run python -m payroll_tracker                     # all reports
-poetry run python -m payroll_tracker --report payslips   # payslips only
-poetry run python -m payroll_tracker --report summary    # totals by role
-poetry run python -m payroll_tracker --report table      # one line each
-poetry run python -m payroll_tracker --employee CT001    # one employee
-poetry run python -m payroll_tracker --help
+poetry run python main.py
 ```
 
-| Option | Description |
-|---|---|
-| `-r`, `--report` | `all` (default), `payslips`, `summary` or `table` |
-| `-e`, `--employee ID` | Only include the employee with this ID |
+or, with any Python 3.11+ interpreter:
 
-The reports use the built-in sample employees defined in
-[`main.py`](src/payroll_tracker/main.py). The exit code is `0` on success,
-`1` for an unknown employee ID and `2` for invalid command-line options.
+```bash
+python main.py
+```
+
+The program shows a menu:
+
+```
+EMPLOYEE PAYROLL TRACKER
+
+  1. Add a full-time employee
+  2. Add a contract employee
+  3. Add an intern
+  4. Load the sample employees
+  5. Show payslips and summary
+  6. Exit
+Choose an option (1-6):
+```
+
+- **Options 1-3** ask for the employee's details. Full-time employees need
+  an annual salary and an optional bonus, contract employees an hourly rate
+  and hours worked, and interns a monthly stipend.
+- **Option 4** adds five sample employees covering every role, for a quick
+  demonstration.
+- **Option 5** prints a payslip for every employee, then a summary by role.
+- **Option 6** (or `Ctrl+C`) exits.
+
+Invalid details are rejected with a message and the employee is not added,
+so you can simply try again:
+
+```
+Choose an option (1-6): 3
+Employee ID: IN009
+Name: Adjoa Mensah
+Monthly stipend: 0
+Error: stipend must be greater than 0 (got 0). Employee not added.
+```
+
+Duplicate employee IDs, empty names, non-numeric amounts and values outside
+the valid ranges are all rejected the same way.
+
+### Running the tests and checks
+
+```bash
+poetry run python -m pytest     # unit tests
+poetry run python -m mypy       # type checking
+poetry run python -m pycodestyle main.py employee.py payroll.py utils.py tests
+                                # PEP 8 style check
+```
 
 ## Payroll rules
 
-All amounts are per monthly pay period. Rates and limits are defined as
-constants in [`utils.py`](src/payroll_tracker/utils.py).
+All amounts are per month. Rates and limits are defined in
+[`utils.py`](utils.py).
 
 | | Full-time | Contract | Intern |
 |---|---|---|---|
-| **Gross pay** | annual salary / 12 + bonus | hours x rate; hours over 160 at 1.5x | fixed stipend |
-| **Pension** | 5% of monthly base salary | none | none |
-| **Tax** | progressive bands on gross - pension | flat 15% of gross | progressive bands on gross |
-| **Net pay** | gross - pension - tax | gross - tax | gross - tax |
+| **Gross pay** | annual salary / 12 + bonus | hourly rate x hours worked | fixed stipend |
+| **Tax** | progressive bands | flat 15% | progressive bands |
+| **Net pay** | gross - tax | gross - tax | gross - tax |
 
-**Progressive tax bands (monthly):**
+**Progressive tax bands (monthly):** first 1,000 at 0%, next 2,000 at 10%,
+next 3,000 at 20%, everything above 6,000 at 30%.
 
-| Taxable income | Rate |
-|---|---|
-| First 1,000 | 0% |
-| Next 2,000 | 10% |
-| Next 3,000 | 20% |
-| Above 6,000 | 30% |
-
-**Validation ranges:**
+**Valid ranges:**
 
 | Field | Allowed range |
 |---|---|
@@ -85,61 +116,27 @@ constants in [`utils.py`](src/payroll_tracker/utils.py).
 | `hourly_rate` | greater than 0, up to 1,000 |
 | `stipend` | greater than 0, up to 5,000 |
 | `bonus` | 0 to 50,000 |
-| `hours_worked` | 0 to 744 (31 days x 24 hours) |
-
-Amounts may be given as `int`, `Decimal` or numeric strings. Floats are
-rejected because they cannot store most decimal amounts exactly.
-
-## Project structure
-
-```
-Employee-Payroll-Tracker/
-├── src/payroll_tracker/
-│   ├── main.py        CLI: argument parsing, sample data, error handling
-│   ├── employee.py    Employee class hierarchy
-│   ├── payroll.py     calculate_salary(), apply_tax(), generate_payslip(),
-│   │                  payroll totals and reports
-│   ├── utils.py       Pay rules, money helpers, validation, formatting
-│   ├── __main__.py    Enables `python -m payroll_tracker`
-│   └── py.typed       Marks the package as typed (PEP 561)
-├── tests/             pytest suite (one file per module)
-├── pyproject.toml     Project metadata, dependencies, mypy config
-├── poetry.lock        Pinned dependency versions
-└── .flake8            PEP 8 style, naming and docstring checks
-```
+| `hours_worked` | 0 to 744 |
 
 ## Design
 
-```
-                      Employee  (abstract base class)
-                      ├── employee_id      read-only property
-                      ├── name             validated property
-                      ├── salary / pension / tax / net_pay
-                      │                    read-only calculated properties
-                      ├── calculate_salary()   abstract
-                      ├── calculate_pension()  default: no pension
-                      ├── calculate_tax()      default: progressive bands
-                      └── pay_details()        abstract
-                                  │
-        ┌─────────────────────────┼─────────────────────────┐
-FullTimeEmployee           ContractEmployee                 Intern
- __annual_salary            __hourly_rate                   __stipend
- __bonus                    __hours_worked
- overrides salary,          overrides salary, tax,          overrides salary,
- pension, pay_details       tax_basis, pay_details          pay_details
-```
-
-- **Inheritance:** subclasses reuse the base class's identity, validation,
-  calculated properties and default rules.
-- **Encapsulation:** pay data lives in name-mangled private attributes
-  (`self.__annual_salary`). It can only be changed through property setters,
-  which reject invalid values and keep the old value.
-  Calculated figures and `employee_id` cannot be assigned at all.
-- **Polymorphism:** `payroll.py` never checks an employee's type. It calls
-  `calculate_salary()`, `pay_details()` and the other methods, and each
-  subclass supplies its own behaviour. A new role only needs a new subclass.
+| Concept | Implementation |
+|---|---|
+| Base class | `Employee` (abstract) in `employee.py` |
+| Subclasses | `FullTimeEmployee`, `ContractEmployee`, `Intern` |
+| Inheritance | Subclasses call `super().__init__()` and reuse the base class's ID, name, validation, `salary` / `tax` / `net_pay` properties and tax calculation |
+| Encapsulation | Pay data is stored in private attributes (`self.__annual_salary`) |
+| Method override | Each role overrides `calculate_salary()` with its own pay rule |
+| Properties | `@property` for salary, bonus and tax; setters reject values outside the valid ranges; `salary`, `tax`, `net_pay` and `employee_id` are read-only |
+| Polymorphism | `payroll.py` and the reports in `main.py` call the same members on every employee, and the payslip changes with the role |
+| Role-based rules | `apply_tax()` in `utils.py` picks the tax rule for each role with `if/elif/else` |
+| Data vs display | Employees return raw `PayDetail` values from `pay_details()`; `main.py` formats them for the payslip |
+| Lists / dictionaries | Employees are kept in a list; `process_payroll()` returns a dictionary mapping employee IDs to payslips |
 
 ## Sample output
+
+Choosing option 4 (load the samples) then option 5 (show payslips) prints a
+payslip for each of the five employees, such as:
 
 ```
 ============================================
@@ -149,36 +146,44 @@ Employee ID                            CT001
 Name                           Kwame Boateng
 --------------------------------------------
 Hourly rate                            25.00
-Regular hours                            160
-Regular pay                         4,000.00
-Overtime hours (x1.5)                     12
-Overtime pay                          450.00
+Hours worked                             172
 --------------------------------------------
-Gross pay                           4,450.00
-Pension                                 0.00
-Tax (flat 15% withholding)            667.50
+Gross pay                           4,300.00
+Tax (flat 15%)                        645.00
 --------------------------------------------
-NET PAY                             3,782.50
+NET PAY                             3,655.00
 ============================================
+```
 
+followed by the summary by role:
+
+```
 PAYROLL SUMMARY BY ROLE
-Role                Count       Gross        Tax    Pension         Net
------------------------------------------------------------------------
-Full-time Employee      2   12,500.00   1,645.00     600.00   10,255.00
-Contract Employee       1    4,450.00     667.50       0.00    3,782.50
-Intern                  2    2,100.00      20.00       0.00    2,080.00
+Role                Count       Gross        Tax         Net
+------------------------------------------------------------
+Full-time Employee      2   12,500.00   1,800.00   10,700.00
+Contract Employee       1    4,300.00     645.00    3,655.00
+Intern                  2    2,100.00      20.00    2,080.00
 ```
 
-## Testing and quality checks
+## Debugging
 
-```bash
-poetry run python -m pytest     # unit and CLI tests
-poetry run python -m mypy       # strict static type checking
-poetry run python -m flake8     # PEP 8 style, naming and docstrings
-```
+The project includes VS Code debug configurations in `.vscode/launch.json`:
 
-> **Note for Windows machines with Device Guard / Smart App Control:** these
-> policies can block compiled extensions and the `.exe` launchers that pip
-> creates in `.venv/Scripts/`. Running tools as modules (`python -m ...`)
-> avoids the launchers. mypy is pinned to 1.18 and installed as pure Python
-> (`no-binary` in `poetry.toml`) for the same reason.
+- **Payroll Tracker: Run main.py** - runs the application under the debugger
+- **Python: Debug Tests** - runs the test suite under the debugger
+
+Open the Run and Debug panel (`Ctrl+Shift+D`), choose a configuration, set
+breakpoints and press `F5`. In the menu, choose option 4 then option 5 to run
+every calculation and hit the breakpoints.
+
+Useful places for breakpoints:
+
+| Breakpoint | What to inspect |
+|---|---|
+| `calculate_salary()` in each class in `employee.py` | Step into it from different employees to see polymorphism: the same call runs a different rule per role |
+| `apply_tax()` in `utils.py` | Watch which `if/elif/else` branch runs for each role |
+| The `while` loop in `progressive_tax()` in `utils.py` | Watch `remaining` and `tax` change band by band |
+| `process_payroll()` in `payroll.py` | Watch the `payroll` dictionary fill up, one payslip per employee ID |
+
+<!-- Add your debugging screenshots or video link here. -->
