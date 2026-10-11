@@ -9,7 +9,7 @@ object-oriented class hierarchy.
 
 ```
 Employee-Payroll-Tracker/
-├── main.py         Entry point: sample employees, formats and prints
+├── main.py         Entry point: interactive menu, formats and prints
 │                   the payslip and summary reports
 ├── employee.py     Employee base class and the three role subclasses,
 │                   each overriding calculate_salary()
@@ -17,6 +17,8 @@ Employee-Payroll-Tracker/
 │                   summarize_by_role()
 ├── utils.py        Pay rules, apply_tax(), money helpers, validation
 ├── tests/          pytest tests, one file per module
+├── debugging-screenshots/
+│                   VS Code debugging session (see Debugging)
 ├── .vscode/        VS Code settings and debug configurations
 ├── pyproject.toml  Project settings and dev dependencies (Poetry)
 ├── poetry.lock     Pinned dependency versions
@@ -186,4 +188,58 @@ Useful places for breakpoints:
 | The `while` loop in `progressive_tax()` in `utils.py` | Watch `remaining` and `tax` change band by band |
 | `process_payroll()` in `payroll.py` | Watch the `payroll` dictionary fill up, one payslip per employee ID |
 
-<!-- Add your debugging screenshots or video link here. -->
+### Debugging screenshots
+
+The screenshots below come from one debugging session in VS Code using the
+**Payroll Tracker: Run main.py** configuration, with breakpoints in
+`employee.py` (lines 154 and 215) and `utils.py` (lines 147 and 162). Option 4
+then option 5 were chosen in the menu to load the sample employees and
+calculate their payslips.
+
+**1. Paused at a breakpoint in `FullTimeEmployee.calculate_salary()`.**
+Execution stops at `employee.py` line 154 for Ama Mensah (FT001). The
+Variables panel shows the private, name-mangled attributes
+(`_FullTimeEmployee__annual_salary`, `_FullTimeEmployee__bonus`), the Call
+Stack shows the path from `show_payroll` in `main.py` through
+`process_payroll` and `generate_payslip`, and the Breakpoints panel lists all
+four breakpoints.
+
+![Paused at a breakpoint with private attributes](debugging-screenshots/01-breakpoint-private-attributes.png)
+
+**2. Inspecting the employee's properties.**
+Expanding `self` shows every property value while paused: `monthly_salary`
+5000, `salary` 5500.00, `tax` 700.00 and `net_pay` 4800.00, alongside the
+`role` and `tax_basis` of the full-time employee.
+
+![Inspecting property values](debugging-screenshots/02-properties-and-call-stack.png)
+
+**3. Stepping out into the inherited `salary` property.**
+Stepping out of `calculate_salary()` lands in the base class's `salary`
+property (`employee.py` line 65, "Paused on step"). This shows inheritance
+and polymorphism at work: the `Employee` base class calls
+`self.calculate_salary()`, and Python runs the `FullTimeEmployee` override.
+
+![Stepping into the inherited salary property](debugging-screenshots/03-step-into-inherited-property.png)
+
+**4. The `tax` property recalculating the salary.**
+Continuing hits the same breakpoint again, but the Call Stack now shows
+`calculate_salary` called from `salary`, which was called from `tax`: the
+read-only `tax` property computes gross pay before taxing it.
+
+![The tax property calling the salary calculation](debugging-screenshots/04-tax-property-calls-salary.png)
+
+**5. The `if/elif/else` role-based tax rule.**
+Paused in `apply_tax()` at `utils.py` line 162 with
+`role = 'Full-time Employee'` and `taxable = Decimal('5500.00')`. The inline
+values show `role` does not equal `CONTRACT`, so the `elif` branch applies the
+progressive bands.
+
+![The if/elif/else tax rule](debugging-screenshots/05-if-elif-else-tax-rule.png)
+
+**6. The `while` loop over the tax bands.**
+Paused inside `progressive_tax()` at `utils.py` line 147 on the first pass of
+the loop: `index = 0`, `width = 1000`, `rate = 0.00`, `portion = 1000` and
+`remaining = 5500.00`, so the first 1,000 is taxed at 0%. Continuing steps
+through each band in turn until `remaining` reaches 0.
+
+![The while loop over the tax bands](debugging-screenshots/06-while-loop-tax-bands.png)
