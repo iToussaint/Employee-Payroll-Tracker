@@ -12,15 +12,14 @@ object-oriented class hierarchy.
 - Progressive income tax bands, flat contractor withholding and pension
 - Overtime pay for contractors above 160 hours a month
 - Validated, encapsulated pay data: private attributes behind `@property`
-  setters, with range checks and an audit history of every pay change
+  setters, with range checks
 - Three reports: detailed payslips, a summary by role, and a payroll table
-- Load employees from a JSON file, or use the built-in sample data
 - Money handled with `Decimal`, never `float`, so amounts are exact to the cent
 - Clear error messages and exit codes for bad input (no tracebacks)
 
 ## Requirements
 
-- Python 3.10 or newer
+- Python 3.11 or newer
 - [Poetry](https://python-poetry.org/) 2.x
 
 ## Setup
@@ -33,7 +32,7 @@ poetry install
 
 `poetry install` creates a virtual environment in `.venv/` (configured in
 `poetry.toml`) and installs the project with its development tools (pytest,
-mypy, flake8 with docstring and naming plugins). In VS Code, the interpreter in `.venv/` is selected
+mypy, flake8 with docstring and naming checks). In VS Code, the interpreter in `.venv/` is selected
 automatically and `.vscode/launch.json` provides debug configurations for the
 app and the tests.
 
@@ -45,7 +44,6 @@ poetry run python -m payroll_tracker --report payslips   # payslips only
 poetry run python -m payroll_tracker --report summary    # totals by role
 poetry run python -m payroll_tracker --report table      # one line each
 poetry run python -m payroll_tracker --employee CT001    # one employee
-poetry run python -m payroll_tracker --data data/employees.json
 poetry run python -m payroll_tracker --help
 ```
 
@@ -53,37 +51,15 @@ poetry run python -m payroll_tracker --help
 |---|---|
 | `-r`, `--report` | `all` (default), `payslips`, `summary` or `table` |
 | `-e`, `--employee ID` | Only include the employee with this ID |
-| `-d`, `--data FILE` | JSON file of employees (default: built-in sample) |
 
-The exit code is `0` on success, `1` for invalid data (missing file, bad
-JSON, invalid employee record, unknown employee ID) and `2` for invalid
-command-line options.
-
-### Employee data file
-
-A JSON list of employee records. The `role` key decides which other fields
-are needed. See [`data/employees.json`](data/employees.json).
-
-| Role | Required fields | Optional fields |
-|---|---|---|
-| `full_time` | `id`, `name`, `annual_salary` | `bonus` (default 0) |
-| `contract` | `id`, `name`, `hourly_rate`, `hours_worked` | |
-| `intern` | `id`, `name`, `stipend` | |
-
-```json
-[
-    {"id": "FT001", "name": "Ama Mensah", "role": "full_time",
-     "annual_salary": 60000, "bonus": 500},
-    {"id": "CT001", "name": "Kwame Boateng", "role": "contract",
-     "hourly_rate": 25, "hours_worked": 172},
-    {"id": "IN001", "name": "Esi Owusu", "role": "intern", "stipend": 1200}
-]
-```
+The reports use the built-in sample employees defined in
+[`main.py`](src/payroll_tracker/main.py). The exit code is `0` on success,
+`1` for an unknown employee ID and `2` for invalid command-line options.
 
 ## Payroll rules
 
 All amounts are per monthly pay period. Rates and limits are defined as
-constants in [`config.py`](src/payroll_tracker/config.py).
+constants in [`utils.py`](src/payroll_tracker/utils.py).
 
 | | Full-time | Contract | Intern |
 |---|---|---|---|
@@ -119,27 +95,18 @@ rejected because they cannot store most decimal amounts exactly.
 ```
 Employee-Payroll-Tracker/
 ├── src/payroll_tracker/
-│   ├── main.py        CLI only: options, data source, errors -> exit codes
-│   ├── employee.py    Employee class hierarchy, PayHistory, PayDetail
+│   ├── main.py        CLI: argument parsing, sample data, error handling
+│   ├── employee.py    Employee class hierarchy
 │   ├── payroll.py     calculate_salary(), apply_tax(), generate_payslip(),
-│   │                  totals and role summaries (via the Payable interface)
-│   ├── reports.py     Payslip, summary and table reports (report registry)
-│   ├── loader.py      Builds employees from dicts/JSON (builder registry)
-│   ├── tax.py         TaxPolicy strategies: ProgressiveTax, FlatTax
-│   ├── config.py      Pay rules, rates and validation limits
-│   ├── utils.py       Generic money, validation and table helpers
+│   │                  payroll totals and reports
+│   ├── utils.py       Pay rules, money helpers, validation, formatting
 │   ├── __main__.py    Enables `python -m payroll_tracker`
 │   └── py.typed       Marks the package as typed (PEP 561)
 ├── tests/             pytest suite (one file per module)
-├── data/
-│   └── employees.json Sample input file
 ├── pyproject.toml     Project metadata, dependencies, mypy config
 ├── poetry.lock        Pinned dependency versions
-└── .flake8            PEP 8, docstring and naming checks
+└── .flake8            PEP 8 style, naming and docstring checks
 ```
-
-Dependencies only point downwards: `main` -> `loader` / `reports` ->
-`payroll` / `employee` -> `tax` -> `config` / `utils`.
 
 ## Design
 
@@ -149,90 +116,28 @@ Dependencies only point downwards: `main` -> `loader` / `reports` ->
                       ├── name             validated property
                       ├── salary / pension / tax / net_pay
                       │                    read-only calculated properties
-                      ├── pay_history      read-only, backed by PayHistory
                       ├── calculate_salary()   abstract
-                      ├── pay_details()        abstract (raw PayDetail data)
                       ├── calculate_pension()  default: no pension
-                      └── calculate_tax()      delegates to a TaxPolicy
+                      ├── calculate_tax()      default: progressive bands
+                      └── pay_details()        abstract
                                   │
         ┌─────────────────────────┼─────────────────────────┐
 FullTimeEmployee           ContractEmployee                 Intern
  __annual_salary            __hourly_rate                   __stipend
  __bonus                    __hours_worked
- overrides salary,          overrides salary,               overrides salary,
- pension, pay_details       pay_details;                    pay_details
-                            uses FlatTax policy
+ overrides salary,          overrides salary, tax,          overrides salary,
+ pension, pay_details       tax_basis, pay_details          pay_details
 ```
 
 - **Inheritance:** subclasses reuse the base class's identity, validation,
-  audit history, calculated properties and default rules.
+  calculated properties and default rules.
 - **Encapsulation:** pay data lives in name-mangled private attributes
   (`self.__annual_salary`). It can only be changed through property setters,
-  which validate the value and record the change in `pay_history`.
+  which reject invalid values and keep the old value.
   Calculated figures and `employee_id` cannot be assigned at all.
-- **Polymorphism:** `payroll.py` and `reports.py` never check an employee's
-  type. They call `calculate_salary()`, `pay_details()` and the other
-  methods, and each subclass supplies its own behaviour.
-
-### SOLID principles
-
-| Principle | How it is applied |
-|---|---|
-| **Single responsibility** | Each module has one job: `employee.py` models pay rules, `tax.py` calculates tax, `payroll.py` aggregates pay, `reports.py` formats output, `loader.py` parses input, `main.py` handles the command line. Inside `employee.py`, the audit log is its own `PayHistory` class, and `pay_details()` returns raw `PayDetail` values that `reports.py` formats. |
-| **Open/closed** | New behaviour is added, not edited in: a new tax rule is a new `TaxPolicy` subclass; a new role is a new `Employee` subclass plus an `@register_builder` function; a new report is an `@register_report` function and appears in `--report` automatically. |
-| **Liskov substitution** | Every subclass can be used wherever `Employee` is expected: the same methods, the same return types, and the same errors for invalid input. The tests run the same payroll and report code over all roles. |
-| **Interface segregation** | Payroll code depends on the small `Payable` protocol (identity and pay figures); reports depend on `Reportable`, which adds only `pay_details()` and `tax_basis`. Employees no longer have to implement parsing (`from_dict`) at all. |
-| **Dependency inversion** | Employees depend on the `TaxPolicy` abstraction, which can be injected per employee (`tax_policy=`). `PayHistory` takes an injectable clock. `payroll.py` and `reports.py` depend on protocols, not classes, so any object with the right members works. `main()` takes injectable output streams. |
-
-### Extending the tracker
-
-```python
-from collections.abc import Sequence
-from decimal import Decimal
-
-from payroll_tracker.employee import Employee, PayDetail
-from payroll_tracker.loader import Record, register_builder
-from payroll_tracker.reports import Reportable, register_report
-from payroll_tracker.utils import Amount, to_amount, to_money
-
-
-class Consultant(Employee):
-    ROLE = "consultant"
-    ROLE_TITLE = "Consultant"
-
-    def __init__(
-        self, employee_id: str, name: str, day_rate: Amount, days: Amount
-    ) -> None:
-        super().__init__(employee_id, name)
-        self.__day_rate = to_amount(day_rate, "day_rate", positive=True)
-        self.__days = to_amount(days, "days")
-
-    def calculate_salary(self) -> Decimal:
-        return to_money(self.__day_rate * self.__days)
-
-    def pay_details(self) -> list[PayDetail]:
-        return [
-            PayDetail("Day rate", self.__day_rate),
-            PayDetail("Days worked", self.__days, "hours"),
-        ]
-
-
-@register_builder("consultant")
-def build_consultant(data: Record) -> Consultant:
-    return Consultant(
-        str(data["id"]), str(data["name"]),
-        to_amount(data["day_rate"], "day_rate"),
-        to_amount(data["days"], "days"),
-    )
-
-
-@register_report("headcount")
-def headcount_report(employees: Sequence[Reportable]) -> str:
-    return f"Headcount: {len(employees)}"
-```
-
-No existing file has to change: the new role works in every report and in
-JSON files, and `--report headcount` becomes available.
+- **Polymorphism:** `payroll.py` never checks an employee's type. It calls
+  `calculate_salary()`, `pay_details()` and the other methods, and each
+  subclass supplies its own behaviour. A new role only needs a new subclass.
 
 ## Sample output
 

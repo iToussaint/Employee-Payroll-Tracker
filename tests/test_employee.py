@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -9,10 +8,7 @@ from payroll_tracker.employee import (
     Employee,
     FullTimeEmployee,
     Intern,
-    PayDetail,
-    PayHistory,
 )
-from payroll_tracker.tax import FlatTax
 
 
 def make_full_timer() -> FullTimeEmployee:
@@ -80,30 +76,10 @@ def test_contract_salary_with_overtime() -> None:
     assert employee.calculate_salary() == Decimal("3500.00")
 
 
-def test_contract_uses_flat_tax_policy_by_default() -> None:
+def test_contract_overrides_tax_with_flat_rate() -> None:
     amount = Decimal("2000")
     assert make_contractor().calculate_tax(amount) == Decimal("300.00")
-    assert make_contractor().tax_basis == "flat 15% withholding"
     assert make_intern().calculate_tax(amount) == Decimal("100.00")  # bands
-    assert make_intern().tax_basis == "progressive bands"
-
-
-def test_tax_policy_can_be_injected() -> None:
-    intern = Intern("IN1", "Esi", stipend=800, tax_policy=FlatTax(
-        Decimal("0.10")
-    ))
-    assert intern.tax == Decimal("80.00")
-    assert intern.tax_basis == "flat 10% withholding"
-
-
-def test_pay_details_are_raw_values_with_units() -> None:
-    assert make_contractor("170").pay_details() == [
-        PayDetail("Hourly rate", Decimal("20")),
-        PayDetail("Regular hours", Decimal("160"), "hours"),
-        PayDetail("Regular pay", Decimal("3200")),
-        PayDetail("Overtime hours (x1.5)", Decimal("10"), "hours"),
-        PayDetail("Overtime pay", Decimal("300.0")),
-    ]
 
 
 def test_only_full_time_overrides_pension() -> None:
@@ -245,46 +221,8 @@ def test_upper_limits_enforced(
         setattr(employee, field, too_high)
 
 
-def test_pay_changes_are_recorded() -> None:
-    employee = make_full_timer()
-    assert employee.pay_history == ()  # initial values are not changes
-
-    employee.annual_salary = 72000
-    employee.bonus = 500  # same value: not recorded
-    employee.bonus = 0
-
-    history = employee.pay_history
-    assert [(c.field, c.old_value, c.new_value) for c in history] == [
-        ("annual_salary", Decimal("60000"), Decimal("72000")),
-        ("bonus", Decimal("500"), Decimal("0")),
-    ]
-    assert all(c.changed_at.tzinfo is not None for c in history)
-
-
-def test_rejected_updates_are_not_recorded() -> None:
+def test_rejected_update_keeps_old_value() -> None:
     employee = make_intern()
     with pytest.raises(ValueError):
         employee.stipend = 0
-    assert employee.pay_history == ()
     assert employee.stipend == Decimal("800")
-
-
-def test_pay_history_cannot_be_modified_from_outside() -> None:
-    employee = make_intern()
-    employee.stipend = 900
-    history = employee.pay_history
-    assert isinstance(history, tuple)
-    with pytest.raises(AttributeError):
-        employee.pay_history = ()  # type: ignore[misc]
-    assert len(employee.pay_history) == 1
-
-
-# Pay history
-
-
-def test_pay_history_uses_injected_clock() -> None:
-    moment = datetime(2026, 1, 31, tzinfo=timezone.utc)
-    history = PayHistory(clock=lambda: moment)
-    history.record("stipend", Decimal("1"), Decimal("2"))
-    history.record("stipend", Decimal("2"), Decimal("2"))  # no change
-    assert [c.changed_at for c in history.changes] == [moment]
