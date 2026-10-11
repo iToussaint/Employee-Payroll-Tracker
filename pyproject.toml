@@ -22,6 +22,8 @@ packages = [{ include = "payroll_tracker", from = "src" }]
 dev = [
     "pytest (>=9.1.1,<10.0.0)",
     "mypy (>=1.18,<1.19)",
+    "flake8 (>=7.4.1,<8.0.0)",
+    "flake8-docstrings (>=1.7.0,<2.0.0)",
 ]
 
 [tool.mypy]

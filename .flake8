@@ -1,0 +1,8 @@
+[flake8]
+# PEP 8 default line length.
+max-line-length = 79
+docstring-convention = google
+exclude = .venv,.git,__pycache__
+# Tests are documented by their descriptive names.
+per-file-ignores =
+    tests/*: D100,D101,D102,D103,D104,D107

@@ -3,19 +3,28 @@ from decimal import Decimal
 
 import pytest
 
-from payroll_tracker.employee import ContractEmployee, Employee, FullTimeEmployee, Intern
+from payroll_tracker.employee import (
+    EMPLOYEE_TYPES,
+    ContractEmployee,
+    Employee,
+    FullTimeEmployee,
+    Intern,
+    create_employee,
+)
 
 
 def make_full_timer() -> FullTimeEmployee:
-    return FullTimeEmployee("FT1", "Ama", annual_salary=Decimal("60000"), bonus=Decimal("500"))
+    return FullTimeEmployee("FT1", "Ama", annual_salary=60000, bonus=500)
 
 
 def make_contractor(hours: str = "100") -> ContractEmployee:
-    return ContractEmployee("CT1", "Kwame", hourly_rate=Decimal("20"), hours_worked=Decimal(hours))
+    return ContractEmployee(
+        "CT1", "Kwame", hourly_rate=20, hours_worked=Decimal(hours)
+    )
 
 
 def make_intern() -> Intern:
-    return Intern("IN1", "Esi", stipend=Decimal("800"))
+    return Intern("IN1", "Esi", stipend=800)
 
 
 # Inheritance
@@ -26,7 +35,9 @@ def test_employee_base_class_is_abstract() -> None:
         Employee("E1", "Nobody")  # type: ignore[abstract]
 
 
-@pytest.mark.parametrize("employee", [make_full_timer(), make_contractor(), make_intern()])
+@pytest.mark.parametrize(
+    "employee", [make_full_timer(), make_contractor(), make_intern()]
+)
 def test_subclasses_inherit_from_employee(employee: Employee) -> None:
     assert isinstance(employee, Employee)
     assert employee.name  # inherited property
@@ -49,8 +60,9 @@ def test_each_subclass_overrides_calculate_salary() -> None:
 
 def test_full_time_salary_and_pension() -> None:
     employee = make_full_timer()
-    assert employee.calculate_salary() == Decimal("5500.00")  # 60000 / 12 + 500
-    assert employee.calculate_pension() == Decimal("250.00")  # 5% of 5000
+    # 60000 / 12 + 500 bonus; pension is 5% of the 5000 base
+    assert employee.calculate_salary() == Decimal("5500.00")
+    assert employee.calculate_pension() == Decimal("250.00")
 
 
 def test_contract_salary_without_overtime() -> None:
@@ -61,13 +73,15 @@ def test_contract_salary_without_overtime() -> None:
 
 def test_contract_salary_with_overtime() -> None:
     employee = make_contractor("170")  # 160h * 20 + 10h * 20 * 1.5
+    assert employee.regular_hours == Decimal("160")
     assert employee.overtime_hours == Decimal("10")
     assert employee.calculate_salary() == Decimal("3500.00")
 
 
 def test_contract_overrides_tax_with_flat_rate() -> None:
-    assert make_contractor().calculate_tax(Decimal("2000")) == Decimal("300.00")
-    assert make_intern().calculate_tax(Decimal("2000")) == Decimal("100.00")  # bands
+    amount = Decimal("2000")
+    assert make_contractor().calculate_tax(amount) == Decimal("300.00")
+    assert make_intern().calculate_tax(amount) == Decimal("100.00")  # bands
 
 
 def test_only_full_time_overrides_pension() -> None:
@@ -103,7 +117,8 @@ def test_setters_validate_and_convert() -> None:
     assert employee.hourly_rate == Decimal("22.50")
     with pytest.raises(ValueError, match="hours_worked cannot be negative"):
         employee.hours_worked = -1
-    assert employee.hours_worked == Decimal("120")  # unchanged after rejected update
+    # A rejected update leaves the old value in place.
+    assert employee.hours_worked == Decimal("120")
 
 
 @pytest.mark.parametrize("bad", ["-5", "abc", "NaN", "Infinity"])
@@ -114,10 +129,14 @@ def test_invalid_amounts_rejected(bad: str) -> None:
 
 def test_float_amounts_rejected() -> None:
     with pytest.raises(TypeError, match="annual_salary"):
-        FullTimeEmployee("FT1", "Ama", annual_salary=60000.5)  # type: ignore[arg-type]
+        FullTimeEmployee(
+            "FT1", "Ama", annual_salary=60000.5  # type: ignore[arg-type]
+        )
 
 
-@pytest.mark.parametrize(("employee_id", "name"), [("", "Ama"), ("  ", "Ama"), ("FT1", " ")])
+@pytest.mark.parametrize(
+    ("employee_id", "name"), [("", "Ama"), ("  ", "Ama"), ("FT1", " ")]
+)
 def test_empty_id_or_name_rejected(employee_id: str, name: str) -> None:
     with pytest.raises(ValueError, match="cannot be empty"):
         Intern(employee_id, name, stipend=1)
@@ -136,7 +155,8 @@ def test_calculated_properties_match_payslip_figures() -> None:
     employee = make_full_timer()
     assert employee.salary == Decimal("5500.00")
     assert employee.pension == Decimal("250.00")
-    assert employee.tax == Decimal("650.00")  # bands on 5250
+    assert employee.taxable_income == Decimal("5250.00")
+    assert employee.tax == Decimal("650.00")
     assert employee.net_pay == Decimal("4600.00")
 
 
@@ -157,19 +177,33 @@ def test_calculated_properties_are_read_only(field: str) -> None:
 @pytest.mark.parametrize(
     ("factory", "field"),
     [
-        (lambda v: FullTimeEmployee("FT1", "Ama", annual_salary=v), "annual_salary"),
-        (lambda v: ContractEmployee("CT1", "Kwame", hourly_rate=v, hours_worked=1), "hourly_rate"),
+        (
+            lambda v: FullTimeEmployee("FT1", "Ama", annual_salary=v),
+            "annual_salary",
+        ),
+        (
+            lambda v: ContractEmployee(
+                "CT1", "Kwame", hourly_rate=v, hours_worked=1
+            ),
+            "hourly_rate",
+        ),
         (lambda v: Intern("IN1", "Esi", stipend=v), "stipend"),
     ],
 )
-def test_base_pay_must_be_greater_than_zero(factory: Callable[[int], Employee], field: str) -> None:
+def test_base_pay_must_be_greater_than_zero(
+    factory: Callable[[int], Employee], field: str
+) -> None:
     with pytest.raises(ValueError, match=f"{field} must be greater than 0"):
         factory(0)
 
 
 def test_zero_bonus_and_zero_hours_are_allowed() -> None:
-    assert FullTimeEmployee("FT1", "Ama", annual_salary=1, bonus=0).bonus == 0
-    assert ContractEmployee("CT1", "Kwame", hourly_rate=1, hours_worked=0).salary == 0
+    full_timer = FullTimeEmployee("FT1", "Ama", annual_salary=1, bonus=0)
+    contractor = ContractEmployee(
+        "CT1", "Kwame", hourly_rate=1, hours_worked=0
+    )
+    assert full_timer.bonus == 0
+    assert contractor.salary == 0
 
 
 @pytest.mark.parametrize(
@@ -182,7 +216,9 @@ def test_zero_bonus_and_zero_hours_are_allowed() -> None:
         (make_intern(), "stipend", "5001"),
     ],
 )
-def test_upper_limits_enforced(employee: Employee, field: str, too_high: str) -> None:
+def test_upper_limits_enforced(
+    employee: Employee, field: str, too_high: str
+) -> None:
     with pytest.raises(ValueError, match=f"{field} cannot exceed"):
         setattr(employee, field, too_high)
 
@@ -219,3 +255,58 @@ def test_pay_history_cannot_be_modified_from_outside() -> None:
     with pytest.raises(AttributeError):
         employee.pay_history = ()  # type: ignore[misc]
     assert len(employee.pay_history) == 1
+
+
+# Building employees from dictionaries
+
+
+def test_registry_maps_every_role_to_its_class() -> None:
+    assert EMPLOYEE_TYPES == {
+        "full_time": FullTimeEmployee,
+        "contract": ContractEmployee,
+        "intern": Intern,
+    }
+
+
+def test_create_employee_builds_each_role() -> None:
+    full_timer = create_employee(
+        {"id": "FT1", "name": "Ama", "role": "full_time",
+         "annual_salary": 60000}
+    )
+    contractor = create_employee(
+        {"id": "CT1", "name": "Kwame", "role": "contract",
+         "hourly_rate": "20", "hours_worked": Decimal("100.5")}
+    )
+    intern = create_employee(
+        {"id": "IN1", "name": "Esi", "role": "intern", "stipend": 800}
+    )
+    assert isinstance(full_timer, FullTimeEmployee)
+    assert full_timer.bonus == 0  # optional field defaults to 0
+    assert isinstance(contractor, ContractEmployee)
+    assert contractor.hours_worked == Decimal("100.5")
+    assert isinstance(intern, Intern)
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"id": "X", "name": "A", "role": "manager"}, "unknown role"),
+        ({"id": "X", "name": "A"}, "unknown role"),
+        ({"id": "X", "name": "A", "role": "intern"}, "missing field"),
+        (
+            {"id": "X", "name": "A", "role": "intern", "stipend": 1,
+             "bonus": 5},
+            "unknown field",
+        ),
+        ({"id": 7, "name": "A", "role": "intern", "stipend": 1}, "text"),
+        (
+            {"id": "X", "name": "A", "role": "intern", "stipend": 0},
+            "greater than 0",
+        ),
+    ],
+)
+def test_create_employee_rejects_bad_data(
+    data: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        create_employee(data)

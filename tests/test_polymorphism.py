@@ -1,8 +1,15 @@
+from collections.abc import Mapping
 from decimal import Decimal
 
-from payroll_tracker.employee import ContractEmployee, Employee, FullTimeEmployee, Intern
+from payroll_tracker.employee import (
+    ContractEmployee,
+    Employee,
+    FullTimeEmployee,
+    Intern,
+)
 from payroll_tracker.payroll import (
     generate_report,
+    payroll_table_report,
     process_payroll,
     role_summary_report,
     summarize_by_role,
@@ -17,7 +24,7 @@ EMPLOYEES: list[Employee] = [
 
 
 class Consultant(Employee):
-    """A role that exists only in this test, to show reports need no changes for new roles."""
+    """A role defined only in this test: reports must handle it unchanged."""
 
     ROLE = "consultant"
     ROLE_TITLE = "Consultant"
@@ -27,6 +34,10 @@ class Consultant(Employee):
 
     def pay_details(self) -> list[tuple[str, str]]:
         return [("Day rate x days", "300.00 x 10")]
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> "Consultant":
+        return cls(str(data["id"]), str(data["name"]))
 
 
 def test_same_method_gives_role_specific_results() -> None:
@@ -68,12 +79,24 @@ def test_report_net_pay_matches_payslip() -> None:
     payroll = process_payroll(EMPLOYEES)
     for employee in EMPLOYEES:
         net = payroll[employee.employee_id]["net_pay"]
-        assert f"{net:,}" in generate_report(employee).splitlines()[-2]
+        net_line = generate_report(employee).splitlines()[-2]
+        assert net_line.startswith("NET PAY")
+        assert net_line.endswith(f"{net:,}")
+
+
+def test_report_lines_have_no_trailing_spaces() -> None:
+    for employee in EMPLOYEES:
+        for line in generate_report(employee).splitlines():
+            assert line == line.rstrip()
 
 
 def test_summarize_by_role_groups_and_totals() -> None:
     summary = summarize_by_role(EMPLOYEES)
-    assert list(summary) == ["Full-time Employee", "Contract Employee", "Intern"]
+    assert list(summary) == [
+        "Full-time Employee",
+        "Contract Employee",
+        "Intern",
+    ]
     full_time = summary["Full-time Employee"]
     assert full_time["headcount"] == 2
     assert full_time["gross_pay"] == Decimal("12500.00")
@@ -93,4 +116,6 @@ def test_new_role_works_without_changing_report_code() -> None:
     assert "PAYSLIP - Consultant" in report
     assert "Day rate x days" in report
     assert "Tax (progressive bands)" in report  # inherited default
-    assert "Consultant" in role_summary_report([consultant, *EMPLOYEES])
+    everyone = [consultant, *EMPLOYEES]
+    assert "Consultant" in role_summary_report(everyone)
+    assert "Consultant" in payroll_table_report(everyone)
