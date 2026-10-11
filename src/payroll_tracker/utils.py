@@ -36,6 +36,13 @@ TAX_BANDS: list[tuple[Decimal | None, Decimal]] = [
     (None, Decimal("0.30")),
 ]
 
+# Upper limits on pay inputs, to catch data-entry mistakes (e.g. an extra zero).
+MAX_ANNUAL_SALARY = Decimal("1000000")
+MAX_BONUS = Decimal("50000")
+MAX_HOURLY_RATE = Decimal("1000")
+MAX_MONTHLY_HOURS = Decimal("744")  # 31 days * 24 hours
+MAX_STIPEND = Decimal("5000")
+
 CENT = Decimal("0.01")
 
 
@@ -50,8 +57,18 @@ def require_non_negative(value: Decimal, field: str) -> None:
         raise ValueError(f"{field} cannot be negative (got {value})")
 
 
-def to_amount(value: Amount, field: str) -> Decimal:
-    """Convert an int, numeric string or Decimal to a finite, non-negative Decimal."""
+def to_amount(
+    value: Amount,
+    field: str,
+    *,
+    positive: bool = False,
+    maximum: Decimal | None = None,
+) -> Decimal:
+    """Convert an int, numeric string or Decimal to a finite Decimal within range.
+
+    The result is always >= 0. With positive=True it must be > 0, and with a
+    maximum it must not exceed that limit.
+    """
     if isinstance(value, bool) or not isinstance(value, (Decimal, int, str)):
         raise TypeError(f"{field} must be a Decimal, int or numeric string (got {value!r})")
     try:
@@ -60,7 +77,11 @@ def to_amount(value: Amount, field: str) -> Decimal:
         raise ValueError(f"{field} is not a valid number (got {value!r})") from None
     if not amount.is_finite():
         raise ValueError(f"{field} must be a finite number (got {value!r})")
+    if positive and amount <= 0:
+        raise ValueError(f"{field} must be greater than 0 (got {amount})")
     require_non_negative(amount, field)
+    if maximum is not None and amount > maximum:
+        raise ValueError(f"{field} cannot exceed {maximum} (got {amount})")
     return amount
 
 

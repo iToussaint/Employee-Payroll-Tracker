@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
@@ -126,3 +127,95 @@ def test_name_can_be_updated() -> None:
     employee = make_intern()
     employee.name = "  Esi Owusu "
     assert employee.name == "Esi Owusu"
+
+
+# Properties & data validation
+
+
+def test_calculated_properties_match_payslip_figures() -> None:
+    employee = make_full_timer()
+    assert employee.salary == Decimal("5500.00")
+    assert employee.pension == Decimal("250.00")
+    assert employee.tax == Decimal("650.00")  # bands on 5250
+    assert employee.net_pay == Decimal("4600.00")
+
+
+def test_calculated_properties_follow_pay_updates() -> None:
+    employee = make_full_timer()
+    employee.bonus = 0
+    assert employee.salary == Decimal("5000.00")
+    assert employee.tax == Decimal("550.00")  # bands on 4750
+
+
+@pytest.mark.parametrize("field", ["salary", "tax", "pension", "net_pay"])
+def test_calculated_properties_are_read_only(field: str) -> None:
+    employee = make_full_timer()
+    with pytest.raises(AttributeError):
+        setattr(employee, field, Decimal("1"))
+
+
+@pytest.mark.parametrize(
+    ("factory", "field"),
+    [
+        (lambda v: FullTimeEmployee("FT1", "Ama", annual_salary=v), "annual_salary"),
+        (lambda v: ContractEmployee("CT1", "Kwame", hourly_rate=v, hours_worked=1), "hourly_rate"),
+        (lambda v: Intern("IN1", "Esi", stipend=v), "stipend"),
+    ],
+)
+def test_base_pay_must_be_greater_than_zero(factory: Callable[[int], Employee], field: str) -> None:
+    with pytest.raises(ValueError, match=f"{field} must be greater than 0"):
+        factory(0)
+
+
+def test_zero_bonus_and_zero_hours_are_allowed() -> None:
+    assert FullTimeEmployee("FT1", "Ama", annual_salary=1, bonus=0).bonus == 0
+    assert ContractEmployee("CT1", "Kwame", hourly_rate=1, hours_worked=0).salary == 0
+
+
+@pytest.mark.parametrize(
+    ("employee", "field", "too_high"),
+    [
+        (make_full_timer(), "annual_salary", "1000000.01"),
+        (make_full_timer(), "bonus", "50001"),
+        (make_contractor(), "hourly_rate", "1001"),
+        (make_contractor(), "hours_worked", "745"),
+        (make_intern(), "stipend", "5001"),
+    ],
+)
+def test_upper_limits_enforced(employee: Employee, field: str, too_high: str) -> None:
+    with pytest.raises(ValueError, match=f"{field} cannot exceed"):
+        setattr(employee, field, too_high)
+
+
+def test_pay_changes_are_recorded() -> None:
+    employee = make_full_timer()
+    assert employee.pay_history == ()  # initial values are not changes
+
+    employee.annual_salary = 72000
+    employee.bonus = 500  # same value: not recorded
+    employee.bonus = 0
+
+    history = employee.pay_history
+    assert [(c.field, c.old_value, c.new_value) for c in history] == [
+        ("annual_salary", Decimal("60000"), Decimal("72000")),
+        ("bonus", Decimal("500"), Decimal("0")),
+    ]
+    assert all(c.changed_at.tzinfo is not None for c in history)
+
+
+def test_rejected_updates_are_not_recorded() -> None:
+    employee = make_intern()
+    with pytest.raises(ValueError):
+        employee.stipend = 0
+    assert employee.pay_history == ()
+    assert employee.stipend == Decimal("800")
+
+
+def test_pay_history_cannot_be_modified_from_outside() -> None:
+    employee = make_intern()
+    employee.stipend = 900
+    history = employee.pay_history
+    assert isinstance(history, tuple)
+    with pytest.raises(AttributeError):
+        employee.pay_history = ()  # type: ignore[misc]
+    assert len(employee.pay_history) == 1
